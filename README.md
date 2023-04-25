@@ -1,0 +1,1 @@
+# vodapay-gateway-plugin-prestashop
