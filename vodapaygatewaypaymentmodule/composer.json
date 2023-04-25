@@ -1,0 +1,50 @@
+{
+  "description": "Enabling ecommerce merchants to accept online payments from customers.",
+  "keywords": [
+    "openapitools",
+    "openapi-generator",
+    "openapi",
+    "php",
+    "sdk",
+    "rest",
+    "api"
+  ],
+  "homepage": "https://openapi-generator.tech",
+  "license": "unlicense",
+  "authors": [
+    {
+      "name": "OpenAPI-Generator contributors",
+      "homepage": "https://openapi-generator.tech"
+    }
+  ],
+  "repositories": [{
+    "type": "composer",
+    "url": "https://d1obo85kqbz91z.cloudfront.net/"
+  }],
+  "config": {
+    "secure-http": false
+  },
+  "require": {
+    "php": "^7.4 || ^8.1",
+    "ext-curl": "*",
+    "ext-json": "*",
+    "ext-mbstring": "*",
+    "guzzlehttp/guzzle": "7.3",
+    "guzzlehttp/psr7": "^1.7 || ^2.0",
+    "vodapay-gateway/vodapay-gateway-api-client-php": "dev-fix/php-client"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^8.0 || ^9.0",
+    "friendsofphp/php-cs-fixer": "^3.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "VodaPayGatewayClient\\": "lib/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "VodaPayGatewayClient\\Test\\": "test/"
+    }
+  }
+}
