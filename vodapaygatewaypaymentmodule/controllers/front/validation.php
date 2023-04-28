@@ -36,22 +36,23 @@ class VodapaygatewaypaymentmoduleValidationModuleFrontController extends ModuleF
          */
         if ($this->module->active == false) {
             die;
-        }
+        }  
+
+        $data = json_decode(base64_decode($_GET['data']));
         $cart = $this->context->cart;
         $orderTotal = $cart->getOrderTotal(true,Cart::BOTH);
-        $cart_id = $this->context->cart->id;
+        $cart_id = is_null($this->context->cart->id)? 1:$this->context->cart->id;
         $customer_id = $this->context->customer->id;
+        
         Db::getInstance()->update(
             'first_data_ipg',
             array(
-                'response' => pSQL(var_export($_POST, true)),
+                'response' => pSQL(var_export($data->responseMessage, true)),
                 'updated' => date('Y-m-d H:i:s'),
             ),
             "id_cart = $cart_id"
         );
-
-        
-        
+    
         if ($cart->id_customer == 0 || $cart->id_address_delivery == 0 || $cart->id_address_invoice == 0 || !$this->module->active) {
             Tools::redirect('index.php?controller=order&step=1');
         }
@@ -65,26 +66,21 @@ class VodapaygatewaypaymentmoduleValidationModuleFrontController extends ModuleF
         Context::getContext()->language = new Language((int) Context::getContext()->customer->id_lang);
 
         $secure_key = Context::getContext()->customer->secure_key;
-
+        
         if ($this->isValidOrder() === true) {
             $payment_status = Configuration::get('PS_OS_PAYMENT');
-            print_r('order valid');
             $message = null;
         } else {
             $payment_status = Configuration::get('PS_OS_ERROR');
-
-            /**
-             * Add a message to explain why the order has not been validated
-             */
-            $message = $this->module->l('An error occurred while processing payment');
+            $message = $this->module->l($data->responseMessage);
         }
+        
         $module_name = $this->module->displayName;
         $currency_id = (int) Context::getContext()->currency->id;
 
         $this->module->validateOrder($cart_id, $payment_status, $orderTotal, $module_name, $message, array(), $currency_id, false, $secure_key);
 
         $order_id = Order::getOrderByCartId((int)$cart_id);
-        $this->context->smarty->assign('shopName', Configuration::get('PS_SHOP_NAME'));
         
         if ($order_id && ($secure_key == $this->context->customer->secure_key)) {
             $module_id = $this->module->id;
@@ -107,17 +103,20 @@ class VodapaygatewaypaymentmoduleValidationModuleFrontController extends ModuleF
     protected function isValidOrder()
     {
         $data = json_decode(base64_decode($_GET['data']));
-        print_r($data);
-
         $isValid = false;
-        print_r($isValid);
-        print_r($data->responseCode);
+        
+        if($data->responseCode == 'ER'){
+            return false;
+        }
+
+        if(intval($data->responseCode) > 500){
+            return false;
+        }
+
         if (intval($data->responseCode) == 00){
             $isValid = true;
-            print_r($isValid);
-        } 
-        print_r('valid cart:');
-        print_r($isValid);
+            return true;
+        }
         return $isValid;
     }
 }

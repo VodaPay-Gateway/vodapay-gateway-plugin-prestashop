@@ -52,8 +52,6 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
 
         $this->limited_countries = array('ZA');
 
-        $this->limited_currencies = array('ZAR');
-
         $this->ps_versions_compliancy = array('min' => '1.6', 'max' => _PS_VERSION_);
 
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
@@ -81,7 +79,10 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
             $this->registerHook('payment') &&
             $this->registerHook('paymentReturn') &&
             $this->registerHook('paymentOptions') &&
-            $this->registerHook('displayPayment');
+            $this->registerHook('displayPayment')&&
+            $this->registerHook('actionOrderStatusPostUpdate')&&
+            $this->registerHook('actionOrderStatusUpdate')&&
+            $this->alterOrderTable();
     }
 
     public function uninstall()
@@ -89,6 +90,14 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
         Configuration::deleteByName('VODAPAYGATEWAYPAYMENTMODULE_LIVE_MODE');
 
         return parent::uninstall();
+    }
+
+    protected function alterOrderTable(){
+        if (!Db::getInstance()->Execute('SELECT transaction_id from '._DB_PREFIX_.'orders'))
+       { 
+           if (!Db::getInstance()->Execute('ALTER TABLE '._DB_PREFIX_.'orders ADD `transaction_id` VARCHAR(50) CHARACTER SET utf8 COLLATE utf8_unicode_ci NULL DEFAULT NULL'))
+           return false;
+       }
     }
 
     /**
@@ -313,15 +322,17 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
         $order = $params['order'];
 
 
-        if ($order->getCurrentOrderState()->id != Configuration::get('PS_OS_ERROR'))
+        if ($order->getCurrentOrderState()->id != Configuration::get('PS_OS_ERROR')){
             $this->smarty->assign('status', 'ok');
+            print_r($this->context);
+        }
             
         $this->smarty->assign(array(
             'id_order' => $order->id,
             'reference' => $_GET['referenceId'],
             'params' => $params,
             'shopName' =>[$this->context->shop->name],
-            'responseMsg'=> $_GET['responseMsg'],
+            'responseMsg'=> [$_GET['responseMsg']],
             'total' => Tools::displayPrice($order->total_paid, $order->id_currency, false),
         ));
 
@@ -367,7 +378,7 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
             $gatewayURL = 'https://api.vodapaygatewayuat.vodacom.co.za/V2/Pay/OnceOff';
         }
 
-        $this->context->smarty->assign('shopName', Configuration::get('PS_SHOP_NAME'));
+        
         $data = ['params'=>$params,'APIKey'=>$APIKey,'test'=>$testHeader,'gatewayURL'=>$gatewayURL,'name'=>$this->name];
         $externalOption->setCallToActionText($this->l('Pay with VodaPay'))
                         ->setAdditionalInformation($this->display(__FILE__, 'views/templates/front/paymentInfos.tpl'))
@@ -394,6 +405,18 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
     public function hookDisplayPayment()
     {
         return $this->display(__FILE__, _PS_MODULE_DIR_.$this->name.'views/templates/hook/displayPayment.tpl');
+    }
+
+    public function hookActionOrderStatusUpdate($params)
+    {
+        echo "<script type='text/javascript'>alert('this works');</script>";
+        print_r('this works');
+        //return $this->context->link->getModuleLink($this->name, 'handlerefund', $data, true);
+    }
+
+    public function hookactionOrderStatusPostUpdate(){
+        echo "<script type='text/javascript'>alert('this other one works');</script>";
+        print_r('this other one works');
     }
 
 }

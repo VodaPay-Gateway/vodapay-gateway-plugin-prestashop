@@ -35,7 +35,7 @@
 <h3>{l s='Your order on %s has not been accepted.' sprintf=$shopName mod='vodapaygatewaypaymentmodule'}</h3>
 <p>
 	<br />- {l s='Reference' mod='vodapaygatewaypaymentmodule'} <span class="reference"> <strong>{$reference|escape:'html':'UTF-8'}</strong></span>
-	<br /><br />{l s=$responseMsg mod='vodapaygatewaypaymentmodule'}
+	<br /><br />{l s='Error message: %s' sprintf=$responseMsg mod='vodapaygatewaypaymentmodule'}
 	<br /><br />{l s='Please, try to order again.' mod='vodapaygatewaypaymentmodule'}
 	<br /><br />{l s='If you have questions, comments or concerns, please contact our' mod='vodapaygatewaypaymentmodule'} <a href="{$link->getPageLink('contact', true)|escape:'html':'UTF-8'}">{l s='expert customer support team.' mod='vodapaygatewaypaymentmodule'}</a>
 </p>

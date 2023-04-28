@@ -63,12 +63,12 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
                 //FAILURE
                  $responseMessages = ResponseCodeConstants::getResponseText();
                 $failureMsg = $responseMessages[$responseCode];
-                $data = ['responseCode'=>$responseCode,'responseMsg'=>$failureMsg];
+                $data = base64_encode(['responseCode'=>$responseCode,'responseMessage'=>$failureMsg]);
                 return Tools::redirect($this->context->link->getModuleLink($_GET['name'],'validation',$data, true));
                 }
             }
         } catch (Exception $e) {
-            $data = ['responseCode'=>500,'responseMsg'=>$e];
+            $data = base64_encode(['responseCode'=>500,'responseMessage'=>$e]);
            return Tools::redirect($this->context->link->getModuleLink($_GET['name'],'validation',$data, true));
         }
     }
@@ -83,8 +83,8 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
                 'barcode'=> $item['unique_id'],
                 'quantity'=> $item['cart_quantity'],
                 'description'=> trim($item['description_short'],'<\/p>'),
-                'amountExVAT'=> (int)$item['price_with_reduction_without_tax']*100,
-                'amountVAT'=> (int)$item['total_wt']*100,
+                'amountExVAT'=> number_format((float)$item['price_with_reduction_without_tax']*100., 0, '.', ''),
+                'amountVAT'=> number_format((float)$item['total_wt']*100., 0, '.', ''),
             ];
             array_push($basketitems,$product);
         }
@@ -96,7 +96,7 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
         'DelaySettlement' => false,
         'EchoData'=> 'Prestashop payment',
         'TraceId'=> $this->getTraceId($params['cart']['id']),
-        'Amount'=> $this->context->cart->getOrderTotal(true)*100,
+        'Amount'=>  number_format((float)$this->context->cart->getOrderTotal(true)*100., 0, '.', ''),
         'Basket'=> $this->getBasketItems(),
         'Notifications' => $this->getNotifications(),
         'Styling'=>['LogoUrl'=>Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_MERCHANT_LOGO_URL'),'BannerUrl'=>Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_MERCHANT_MESSAGE_URL')],
