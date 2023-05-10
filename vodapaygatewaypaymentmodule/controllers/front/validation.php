@@ -77,8 +77,9 @@ class VodapaygatewaypaymentmoduleValidationModuleFrontController extends ModuleF
         
         $module_name = $this->module->displayName;
         $currency_id = (int) Context::getContext()->currency->id;
+        $referenceID = $data->transactionId;
 
-        $this->module->validateOrder($cart_id, $payment_status, $orderTotal, $module_name, $message, array(), $currency_id, false, $secure_key);
+        $this->module->validateOrder($cart_id, $payment_status, $orderTotal, $module_name, $message, array('transaction_id'=>$referenceID), $currency_id, false, $secure_key);
 
         $order_id = Order::getOrderByCartId((int)$cart_id);
         
@@ -89,8 +90,9 @@ class VodapaygatewaypaymentmoduleValidationModuleFrontController extends ModuleF
             $responseMsg = $data->responseMessage;
             Tools::redirect('index.php?controller=order-confirmation&id_cart='.$cart_id.'&id_module='.$module_id.'&id_order='.$order_id.'&key='.$secure_key.'&referenceId='.$referenceID.'&responseMsg='.$responseMsg);
         } else {
-            $this->errors[] = $this->module->l('An error occured. Please contact the merchant to have more informations');
-            return $this->setTemplate('module:cheque/views/templates/front/error.tpl');
+            $errors = ["An error occured. Please contact the merchant to have more informations:", $responseMsg];
+            $this->context->smarty->assign(['errors' => $errors]);
+            return $this->context->smarty->fetch('module:vodapaygatewaypaymentmodule/views/templates/front/error.tpl');
         }
     }
 
@@ -109,7 +111,7 @@ class VodapaygatewaypaymentmoduleValidationModuleFrontController extends ModuleF
             return false;
         }
 
-        if(intval($data->responseCode) > 500){
+        if(intval($data->responseCode) >= 500){
             return false;
         }
 

@@ -28,6 +28,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once _PS_MODULE_DIR_ . 'vodapaygatewaypaymentmodule/classes/ReponseCodeConstants.php';
+
 class Vodapaygatewaypaymentmodule extends PaymentModule
 {
     protected $config_form = false;
@@ -79,9 +81,11 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
             $this->registerHook('payment') &&
             $this->registerHook('paymentReturn') &&
             $this->registerHook('paymentOptions') &&
-            $this->registerHook('displayPayment')&&
-            $this->registerHook('actionOrderStatusPostUpdate')&&
-            $this->registerHook('actionOrderStatusUpdate')&&
+            $this->registerHook('displayPayment') &&
+            $this->registerHook('actionOrderStatusPostUpdate') &&
+            $this->registerHook('actionOrderSlipAdd') &&
+            $this->registerHook('actionOrderStatusUpdate' )&&
+            $this->registerHook('ActionProductCancel') &&
             $this->alterOrderTable();
     }
 
@@ -320,23 +324,22 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
 
         
         $order = $params['order'];
-
+        $responseDetails = array();
 
         if ($order->getCurrentOrderState()->id != Configuration::get('PS_OS_ERROR')){
-            $this->smarty->assign('status', 'ok');
-            print_r($this->context);
+            $responseDetails['status'] = 'ok';
         }
-            
-        $this->smarty->assign(array(
-            'id_order' => $order->id,
-            'reference' => $_GET['referenceId'],
-            'params' => $params,
-            'shopName' =>[$this->context->shop->name],
-            'responseMsg'=> [$_GET['responseMsg']],
-            'total' => Tools::displayPrice($order->total_paid, $order->id_currency, false),
-        ));
 
-        return $this->display(__FILE__, 'views/templates/hook/confirmation.tpl');
+        $responseDetails['id_order'] = $order->id;
+        $responseDetails['reference'] = $_GET['referenceId'];
+        $responseDetails['params'] = $params;
+        $responseDetails['shopName'] =[$this->context->shop->name];
+        $responseDetails['responseMsg'] = $_GET['responseMsg'];
+        $responseDetails['total'] = Tools::displayPrice($order->total_paid);
+
+        $this->context->smarty->assign($responseDetails);
+
+       return $this->context->smarty->fetch('module:vodapaygatewaypaymentmodule/views/templates/hook/confirmation.tpl');
     }
 
     /**
@@ -366,18 +369,15 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
     public function getExternalPaymentOption($params)
     {   
         $externalOption = new \PrestaShop\PrestaShop\Core\Payment\PaymentOption();
-        $testHeader = 'false';
-        if (Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_CONFIG_ENV') == '1'){
-            $testHeader = 'true'; 
-        }
+
         if(Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_CONFIG_ENV') == '3'){
             $APIKey = Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_PROD_API_KEY');
             $gatewayURL = 'https://api.vodapaygateway.vodacom.co.za/V2/Pay/OnceOff';
         }else{
             $APIKey = Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_UAT_API_KEY');
             $gatewayURL = 'https://api.vodapaygatewayuat.vodacom.co.za/V2/Pay/OnceOff';
+            $testHeader = (Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_CONFIG_ENV') == '2')?false:true;
         }
-
         
         $data = ['params'=>$params,'APIKey'=>$APIKey,'test'=>$testHeader,'gatewayURL'=>$gatewayURL,'name'=>$this->name];
         $externalOption->setCallToActionText($this->l('Pay with VodaPay'))
@@ -401,22 +401,307 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
         return false;
     }
 
+    public function hookActionOrderSlipAdd($params)
+    {
+        $module = 'vodapaygatewaypaymentmodule';
+        
+        if($params['order']->module == $module){
+            $amount = 0;
+            foreach ($params['productList'] as $product) {
+                $amount += (float) $product['amount'];
+            }
+            $amount += (float) $this->getRefundShipping(end($params['productList'])['id_order_detail']);
+            $amount = (float) number_format((float)$amount, 2, '.', '');
+            $refundParams = [
+                        'order' => $params['order'],
+                        'amount' => $amount,
+                    ];
+                    
+            $refundStatus = $this->refundOrder($refundParams);
+            // $this->get('session')->getFlashBag()->add("error", json_encode(  $amount));
+            $messageLog = 'VodaPay Gateway - refund response: ' . json_encode($refundStatus);
+            PrestaShopLogger::addLog($messageLog, 1, null, 'Order', $params['order']->id, true);
+    
+            print_r($refundStatus);
+
+            if ($refundStatus == '00') {
+                $history = new OrderHistory();
+                $history->id_order = (int)$params['order']->id;
+                $history->changeIdOrderState(7, $params['order']->id); 
+            }
+            else{
+                $this->resetRefund($params);
+                $this->redirectOrderDetail($params['order']->id); 
+            }
+        }
+    }
+
+    protected function redirectOrderDetail($orderId)
+    {
+        $getAdminLink = $this->context->link->getAdminLink('AdminOrders');
+        if (str_contains($getAdminLink, '?')) {
+            $eGetAdminLink = explode('?', $getAdminLink);
+            $getViewOrder = $eGetAdminLink[0] . $orderId . '/view?' . $eGetAdminLink[1];
+        } else {
+            $getViewOrder = $getAdminLink . '/&vieworder&id_order=' . $orderId;
+        }
+
+        if (Tools::getValue('detailOrderUrl')) {
+            Tools::redirectAdmin(Tools::getValue('detailOrderUrl'));
+        } else {
+            Tools::redirectAdmin($getViewOrder);
+        }
+    }
 
     public function hookDisplayPayment()
     {
-        return $this->display(__FILE__, _PS_MODULE_DIR_.$this->name.'views/templates/hook/displayPayment.tpl');
+        return $this->context->smarty->fetch('module:vodapaygatewaypaymentmodule/views/templates/hook/displayPayment.tpl');
     }
 
     public function hookActionOrderStatusUpdate($params)
     {
-        echo "<script type='text/javascript'>alert('this works');</script>";
-        print_r('this works');
+        $order = new Order((int) $params['id_order']);
+        if (! $this->active || ($order->module != $this->name)) {
+            return;
+        }
+
+        // echo "<script type='text/javascript'>alert('this works');</script>";
+        // print_r('this works');
         //return $this->context->link->getModuleLink($this->name, 'handlerefund', $data, true);
     }
 
-    public function hookactionOrderStatusPostUpdate(){
-        echo "<script type='text/javascript'>alert('this other one works');</script>";
-        print_r('this other one works');
+    public function hookActionOrderStatusPostUpdate(){
+        // echo "<script type='text/javascript'>alert('this other one works');</script>";
+        // print_r('this other one works');
     }
 
+    public function refundOrder($params){
+        $gatewayParameters = $this->getGatewayParameters();
+        $APIKey = $gatewayParameters[0];
+        $gatewayURL = $gatewayParameters[1];
+        $testHeader = $gatewayParameters[2];
+
+        try {
+
+            $curl = curl_init();
+
+            $options = $this->prepareOptions($params);
+
+            $messageLog = 'VodaPay Gateway - refund request: ' . json_encode($options);
+            PrestaShopLogger::addLog($messageLog, 1, null, 'Order', $params['order']->id, true);
+
+            curl_setopt_array($curl, $options);
+
+            $worked = false;
+            $errorMessage = "";
+
+            
+            for ( $i=0; $i<3 ; $i++) 
+            {
+                $result = curl_exec($curl);
+               if( $result !== FALSE ) 
+               {
+                  $worked = TRUE;
+                  break;
+               }
+            }
+            
+            if($worked == false)
+            {
+                $errorMessage = error_get_last();
+                throw new Exception(implode($errorMessage));
+            }
+            else{
+                
+                $response = json_decode($result);
+                $responseCode = $response->data->responseCode;
+                $responseMessage = $response->data->responseMessage;
+
+                if (in_array($responseCode, ResponseCodeConstants::getGoodResponseCodeList())) {
+                    //SUCCESS
+                    if ($responseCode == "00") {
+                        /*
+                        * update order status
+                        */ 
+                        $type="success";
+                        $responseMessage = sprintf("VodaPay refund completed with amount R %s",number_format((float)$params['amount'], 2, '.', ''));
+                        $this->get('session')->getFlashBag()->add($type, $responseMessage);
+                        return $responseCode;
+                    }
+                } elseif (in_array($responseCode, ResponseCodeConstants::getBadResponseCodeList())) {
+                    //FAILURE
+                     /*
+                     * report failure, reset order status
+                     */
+                    $type="error";
+                    $this->get('session')->getFlashBag()->add($type, $responseMessage);
+                    return $responseCode;
+                }else {
+                    $type="error";
+                    $this->get('session')->getFlashBag()->add($type, $responseMessage);
+                    return $responseCode;
+                }
+            }
+        } catch (Exception $e) {
+            /*
+            *alert error
+            */
+            $type="error";
+            $errorMessage = "An error occurred while processing your refund request: " + $e->getMessage();
+            $this->get('session')->getFlashBag()->add($type, $errorMessage);
+            return $result;
+        }
+        finally {
+            curl_close($curl);
+        }
+    }
+
+    public function prepareOptions($params){
+        $args =json_encode($this->prepareArgs($params));
+        $gatewayParameters = $this->getGatewayParameters();
+        $gatewayURL = $gatewayParameters[1];
+        $options = [
+            CURLOPT_URL => $gatewayURL,
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $this->prepareHeader($gatewayParameters, $args),
+            CURLOPT_POSTFIELDS => $args
+        ];
+        return $options;
+    }
+
+    public function prepareHeader($params, $args){
+        return ["Content-Type: application/json",
+                // "Content-Length: " . strlen($args), 
+                "Accept: application/json",
+                "api-key: ".$params[0],
+                "test: ".$params[2]];
+    }
+
+    public function prepareArgs($params){
+        $args=[
+        'echoData'=> 'Prestashop payment',
+        'traceId'=> $this->getTraceId($params['order']->id),
+        'originalTransactionId' => $this->getOrderTransId($params['order']),
+        'amount'=>  number_format((float)$params['amount']*100, 0, '.', ''),
+        'notifications' => $this->getNotifications(),
+        ];
+        return $args;
+    }
+
+    public function getNotifications(){
+        
+        $notifications = ['notificationUrl' => Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_NOTIFICATION_URL')];
+        return $notifications;
+    }
+
+    public function getTraceId($oid){
+        $rlength = 10;
+        $traceId = substr(
+            str_shuffle(str_repeat(
+                $x = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                ceil($rlength / strlen($x))
+            )),
+            1,
+            32
+        );
+        $traceId = str_pad($oid, 12, $traceId, STR_PAD_LEFT);
+        return $traceId;
+    }
+
+    public function getOrderTransId($order){
+        return $order->getOrderPayments()[0]->transaction_id;
+    }
+
+    public function getGatewayParameters(){
+        if(Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_CONFIG_ENV') == '3'){
+            $APIKey = Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_PROD_API_KEY');
+            $gatewayURL = 'https://api.vodapaygateway.vodacom.co.za/v2/Pay/Refund';
+        }else{
+            $APIKey = Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_UAT_API_KEY');
+            $gatewayURL = 'https://api.vodapaygatewayuat.vodacom.co.za/v2/Pay/Refund';
+            $testHeader = (Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_CONFIG_ENV') == '2')?false:true;
+        }
+        return [$APIKey, $gatewayURL, $testHeader];
+    }
+
+    public function resetRefund($params){
+        foreach ($params['productList'] as $orderDetailLists) {
+            $productQtyRefunded = 0;
+
+            $idOrderDetail = $orderDetailLists['id_order_detail'];
+
+            $countOfOrderSlipDetail = Db::getInstance()->getRow('SELECT COUNT(id_order_slip) as '
+                . 'count_of_order_slip_detail from `'
+                . _DB_PREFIX_ . 'order_slip_detail` where id_order_detail = '
+                . (int) $idOrderDetail);
+
+            if ((int) $countOfOrderSlipDetail['count_of_order_slip_detail'] !== 1) {
+                $idOrderSlipDetail = Db::getInstance()->getRow('SELECT max(id_order_slip) as '
+                . ' id_order_slip from `'
+                . _DB_PREFIX_ . 'order_slip_detail` where id_order_detail = '
+                . (int) $idOrderDetail);
+            } else {
+                $idOrderSlipDetail['id_order_slip'] = 0;
+            }
+
+            Db::getInstance()->execute('DELETE from `'
+                . _DB_PREFIX_ . 'order_slip_detail` where id_order_slip = '
+                . (int) $idOrderSlipDetail['id_order_slip']);
+            Db::getInstance()->execute('DELETE from `' 
+                . _DB_PREFIX_ . 'order_slip` where id_order_slip = '
+                . (int) $idOrderSlipDetail['id_order_slip']);
+
+            $orderDetail = $this->getOrderDetail($idOrderDetail);
+
+            $this->resetStock($orderDetail, $orderDetailLists);
+
+            $productQtyRefunded = (int) $orderDetail['product_quantity_refunded'] -
+            (int) $orderDetailLists['quantity'];
+
+            $messageLog = 'VodaPay Gateway - product qty refunded (' . $idOrderDetail . ') : ' . $productQtyRefunded;
+            PrestaShopLogger::addLog($messageLog, 3, null, 'Order', $params['id_order'], true);
+
+            Db::getInstance()->execute('UPDATE `' . _DB_PREFIX_ . 'order_detail` '
+                . ' set product_quantity_refunded = '
+                . (int) $productQtyRefunded . ' where id_order_detail = '
+                . (int) $idOrderDetail);
+        }
+        $messageLog = 'VodaPay Gateway - order has not been successfully partial refunded';
+        PrestaShopLogger::addLog($messageLog, 3, null, 'Order', $params['id_order'], true);
+
+        
+    }
+
+    public function resetStock($orderDetail, $orderDetailLists){
+        $productStock = Db::getInstance()->getRow('SELECT quantity FROM `'
+        . _DB_PREFIX_ . 'stock_available` where `id_product` = '
+        . (int) $orderDetail['product_id']. ' and `id_product_attribute` = '
+        . (int)$orderDetail['product_attribute_id'] );
+
+        $productQtyRefunded = (int) $productStock['quantity'] -
+            (int) $orderDetailLists['quantity'];
+        
+        Db::getInstance()->execute('UPDATE `' . _DB_PREFIX_ . 'stock_available` '
+                . ' set quantity = '
+                . (int) $productQtyRefunded . ' where `id_product` = '
+                . (int) $orderDetail['product_id']. ' and `id_product_attribute` = '
+                . (int)$orderDetail['product_attribute_id']);
+    }
+
+    public function getOrderDetail($idOrderDetail){
+        return Db::getInstance()->getRow('SELECT * from `'
+        . _DB_PREFIX_ . 'order_detail` where id_order_detail = '
+        . (int) $idOrderDetail);
+    }
+
+    public function getRefundShipping( $idOrderDetail){
+        $slipId = Db::getInstance()->getRow('SELECT id_order_slip from `'
+        . _DB_PREFIX_ . 'order_slip_detail` where id_order_detail = '
+        . (int) $idOrderDetail);
+
+        return $refundShipping = Db::getInstance()->getRow('SELECT total_shipping_tax_incl from `'
+        . _DB_PREFIX_ . 'order_slip` where id_order_slip = '
+        . (int) $slipId['id_order_slip'])['total_shipping_tax_incl'];
+    }
 }

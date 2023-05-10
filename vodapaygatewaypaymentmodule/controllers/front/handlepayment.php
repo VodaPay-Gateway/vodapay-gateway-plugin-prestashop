@@ -1,5 +1,5 @@
 <?php
-require 'ReponseCodeConstants.php';
+require_once _PS_MODULE_DIR_ . 'vodapaygatewaypaymentmodule/classes/ReponseCodeConstants.php';
 class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends ModuleFrontController
 {
     public function postProcess(){
@@ -7,8 +7,8 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
         $data = $_GET;
         $params = $_GET['params'];
         $APIKey = $_GET['APIKey'];
-        $testHeader= $_GET['test'];
-        $gatewayURL= $_GET['gatewayURL'];
+        $testHeader = (int) $_GET['test'];
+        $gatewayURL = $_GET['gatewayURL'];
 
         Db::getInstance()->insert('first_data_ipg', array(
             'id_cart' => (int) $params['cart']['id'],
@@ -26,15 +26,21 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
 
         try {
 
-            $context  = stream_context_create($this->prepareOptions($APIKey,$testHeader,$params));
-            
+            // $context  = stream_context_create($this->prepareOptions($APIKey,$testHeader,$params));
+            $curl = curl_init();
+
+            $options = $this->prepareOptions($params, [$APIKey, $gatewayURL, $testHeader]);
+
+            curl_setopt_array($curl, $options);
+
             $worked = false;
             $errorMessage = "";
 
             
             for ( $i=0; $i<3 ; $i++) 
             {
-                $result = file_get_contents($gatewayURL, false, $context);
+                $result = curl_exec($curl);
+
                if( $result !== FALSE ) 
                {
                   $worked = TRUE;
@@ -51,8 +57,9 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
                 
             $response = json_decode($result);
             $responseCode = $response->data->responseCode;
-            $chargeTotal=0;
-                
+            $responseMessage = $response->data->responseMessage;
+            
+            
             if (in_array($responseCode, ResponseCodeConstants::getGoodResponseCodeList())) {
                 //SUCCESS
                 if ($responseCode == "00") {
@@ -61,15 +68,15 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
                 }
             } elseif (in_array($responseCode, ResponseCodeConstants::getBadResponseCodeList())) {
                 //FAILURE
-                 $responseMessages = ResponseCodeConstants::getResponseText();
-                $failureMsg = $responseMessages[$responseCode];
-                $data = base64_encode(['responseCode'=>$responseCode,'responseMessage'=>$failureMsg]);
-                return Tools::redirect($this->context->link->getModuleLink($_GET['name'],'validation',$data, true));
+                $data = base64_encode(json_encode(['responseCode'=>$responseCode,'responseMessage'=>$responseMessage]));
+                $params = ['data' => $data];
+                return Tools::redirect($this->context->link->getModuleLink($_GET['name'],'validation',$params, true));
                 }
             }
         } catch (Exception $e) {
-            $data = base64_encode(['responseCode'=>500,'responseMessage'=>$e]);
-           return Tools::redirect($this->context->link->getModuleLink($_GET['name'],'validation',$data, true));
+            $data = base64_encode(json_encode(['responseCode'=>500,'responseMessage'=>$e]));
+            $params = ['data' => $data];
+           return Tools::redirect($this->context->link->getModuleLink($_GET['name'],'validation',$params, true));
         }
     }
 
@@ -91,34 +98,38 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
         return $basketitems;
     }
 
-    public function prepareArgs($params){
-        $args=[
-        'DelaySettlement' => false,
-        'EchoData'=> 'Prestashop payment',
-        'TraceId'=> $this->getTraceId($params['cart']['id']),
-        'Amount'=>  number_format((float)$this->context->cart->getOrderTotal(true)*100., 0, '.', ''),
-        'Basket'=> $this->getBasketItems(),
-        'Notifications' => $this->getNotifications(),
-        'Styling'=>['LogoUrl'=>Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_MERCHANT_LOGO_URL'),'BannerUrl'=>Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_MERCHANT_MESSAGE_URL')],
+    public function prepareOptions($params, $gatewayParameters){
+        $args =json_encode($this->prepareArgs($params));
+        $gatewayURL = $gatewayParameters[1];
+        $options = [
+            CURLOPT_URL => $gatewayURL,
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $this->prepareHeader($gatewayParameters, $args),
+            CURLOPT_POSTFIELDS => $args
         ];
-        return $args;
+        return $options;
     }
 
-    public function prepareOptions($APIKey,$testHeader,$params){
-        $args =json_encode($this->prepareArgs($params));
-        print($args);
-        $options =[
-            'http' => [
-                'method'  => "POST",
-                'content' => $args,
-                'header' =>  "Content-Type: application/json\r\n".
-                    "Content-Length: " . strlen($args) . "\r\n".
-                    "Accept: application/json\r\n".
-                    "api-key: ".$APIKey."\r\n" .
-                    "test: ".$testHeader
-                ]
-            ];
-        return $options;
+    public function prepareHeader($params, $args){
+        return ["Content-Type: application/json",
+                // "Content-Length: " . strlen($args), 
+                "Accept: application/json",
+                "api-key: ".$params[0],
+                "test: ".($params[2] == 0)?false:true];
+    }
+
+    public function prepareArgs($params){
+        $args=[
+        'delaySettlement' => false,
+        'echoData'=> 'Prestashop payment',
+        'traceId'=> $this->getTraceId($params['cart']['id']),
+        'amount'=>  number_format((float)$this->context->cart->getOrderTotal(true)*100., 0, '.', ''),
+        'basket'=> $this->getBasketItems(),
+        'notifications' => $this->getNotifications(),
+        'styling'=>['logoUrl'=>Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_MERCHANT_LOGO_URL'),'bannerUrl'=>Configuration::get('VODAPAYGATEWAYPAYMENTMODULE_MERCHANT_MESSAGE_URL')],
+        ];
+        return $args;
     }
 
     public function getTraceId($oid){
