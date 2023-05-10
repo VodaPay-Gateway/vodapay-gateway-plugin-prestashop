@@ -1,0 +1,43 @@
+name: PHP Plugin Release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions: write-all
+
+jobs:
+  pre-release:
+    name: "Release"
+    
+    runs-on: "ubuntu-latest"
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Get Next Version
+      id: versioning
+      uses: ietf-tools/semver-action@v1
+      with:
+        token: ${{ github.token }}
+        branch: main 
+
+    - name: Configure Token
+      run: composer config -g github-oauth.github.com ${{ secrets.API_TOKEN_GITHUB }}
+      
+    - name: Zipping plugin
+      uses: montudor/action-zip@v1
+      with:
+        args: zip -qq -r vodapaygatewaypaymentmodule.zip vodapaygatewaypaymentmodule
+
+    - name: Create Release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: ${{ steps.versioning.outputs.nextStrict }}
+        title: ${{ steps.versioning.outputs.nextStrict }}
+        prerelease: false
+        files: |
+            vodapaygatewaypaymentmodule.zip
