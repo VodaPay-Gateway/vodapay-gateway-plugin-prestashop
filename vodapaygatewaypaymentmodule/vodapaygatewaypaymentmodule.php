@@ -210,7 +210,7 @@ class Vodapaygatewaypaymentmodule extends PaymentModule
                     ],
                     [
                         'type' => 'text',
-                        'label' => $this->l('UAT API Key'),
+                        'label' => $this->l('Sandbox/UAT API Key'),
                         'name' => 'VODAPAYGATEWAYPAYMENTMODULE_UAT_API_KEY',
                         'size' => 20,
                         'required' => true,
