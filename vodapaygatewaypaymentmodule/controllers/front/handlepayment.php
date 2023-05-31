@@ -41,6 +41,9 @@ class VodapaygatewaypaymentmodulehandlepaymentModuleFrontController extends Modu
             {
                 $result = curl_exec($curl);
 
+                $messageLog = 'VodaPay Gateway - once off response: ' . $result;
+                PrestaShopLogger::addLog($messageLog, 3, null, 'Order', $params['id_order'], true);
+
                if( $result !== FALSE ) 
                {
                   $worked = TRUE;
