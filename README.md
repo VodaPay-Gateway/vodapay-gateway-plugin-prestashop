@@ -1,4 +1,4 @@
-# PrestaShop Plugin [![PHP](https://github.com/VodaPay-Gateway/vodapay-gateway-plugin-opencart/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/VodaPay-Gateway/vodapay-gateway-plugin-opencart/actions/workflows/release.yml)
+# PrestaShop Plugin [![PHP](https://github.com/VodaPay-Gateway/vodapay-gateway-plugin-prestashop/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/VodaPay-Gateway/vodapay-gateway-plugin-prestashop/actions/workflows/release.yml)
 
 ## PrestaShop
 [PrestaShop](https://prestashop.com/) is a popular open-source e-commerce platform used by online merchants to create and manage their online stores. It was first launched in 2007 and has since become a reliable and trusted solution for businesses of all sizes. The platform is written in PHP and uses a MySQL database to store product and customer information. 
