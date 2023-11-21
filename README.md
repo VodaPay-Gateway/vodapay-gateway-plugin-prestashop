@@ -101,4 +101,4 @@ The scope is an optional addition to specify what the change focused on.
 
 ## Tags
 
- * For the tags available, see the [tags on this repository](https://github.com/VodaPay-Gateway/vodapay-gateway-plugin-opencart/tags).
+ * For the tags available, see the [tags on this repository](https://github.com/VodaPay-Gateway/vodapay-gateway-plugin-prestashop/tags).
